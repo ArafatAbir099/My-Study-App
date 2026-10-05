@@ -1,0 +1,6 @@
+{
+  "name": "Semester Study Planner",
+  "description": "A comprehensive university student OS to manage semesters, subjects, syllabus, PYQs, automatic revision, focus sessions, study activity heatmap, and exam readiness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
