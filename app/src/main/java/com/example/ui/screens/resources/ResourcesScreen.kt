@@ -107,7 +107,20 @@ fun ResourcesScreen(
 
                 if (filteredRes.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        Text("No resources uploaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                            Text("No resources yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Add lecture notes or resources", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(onClick = { showAddResourceDialog = true }, shape = RoundedCornerShape(12.dp)) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Resource")
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -181,7 +194,20 @@ fun ResourcesScreen(
 
                 if (filteredNotes.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                        Text("No study notes yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                            Text("No study notes yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Add lecture notes or resources", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(onClick = { showAddNoteDialog = true }, shape = RoundedCornerShape(12.dp)) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("New Note")
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(

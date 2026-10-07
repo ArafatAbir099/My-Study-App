@@ -21,6 +21,7 @@ enum class QuickAddType {
     EXAM,
     SUBJECT,
     TOPIC,
+    PYQ,
     REVISION,
     NOTE,
     RESOURCE
@@ -60,6 +61,7 @@ fun QuickAddSheet(
                 Triple(QuickAddType.EXAM, "Upcoming Exam (Quiz/Midterm/Final)", Icons.Default.EventNote),
                 Triple(QuickAddType.SUBJECT, "Subject / Course", Icons.Default.MenuBook),
                 Triple(QuickAddType.TOPIC, "Syllabus Topic", Icons.Default.FormatListBulleted),
+                Triple(QuickAddType.PYQ, "Previous-Year Question (PYQ)", Icons.Default.HelpOutline),
                 Triple(QuickAddType.REVISION, "Revision Milestone", Icons.Default.Autorenew),
                 Triple(QuickAddType.NOTE, "Academic Note", Icons.Default.EditNote),
                 Triple(QuickAddType.RESOURCE, "Lecture Resource / Link", Icons.Default.AttachFile)

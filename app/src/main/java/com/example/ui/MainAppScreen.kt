@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
@@ -28,18 +30,21 @@ import com.example.data.local.TopicEntity
 import com.example.ui.components.GlobalSearchDialog
 import com.example.ui.components.QuickAddSheet
 import com.example.ui.components.QuickAddType
+import com.example.ui.screens.assistant.AIStudyAssistantDialog
 import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.calendar.CalendarScreen
 import com.example.ui.screens.dashboard.DashboardScreen
 import com.example.ui.screens.exams.ExamsScreen
 import com.example.ui.screens.focus.FocusSessionDialog
 import com.example.ui.screens.progress.ProgressScreen
+import com.example.ui.screens.pyq.PYQScreen
 import com.example.ui.screens.recommendation.WhatShouldIStudyDialog
 import com.example.ui.screens.resources.ResourcesScreen
 import com.example.ui.screens.revision.RevisionScreen
 import com.example.ui.screens.semesters.SemestersScreen
 import com.example.ui.screens.settings.SettingsScreen
 import com.example.ui.screens.subjects.SubjectsScreen
+import com.example.ui.theme.PrimaryIndigo
 import com.example.ui.viewmodel.PlannerViewModel
 
 enum class NavigationSection(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
@@ -48,6 +53,7 @@ enum class NavigationSection(val label: String, val icon: androidx.compose.ui.gr
     SUBJECTS("Subjects", Icons.Default.MenuBook),
     REVISION("Revision", Icons.Default.Autorenew),
     EXAMS("Exams", Icons.Default.EventNote),
+    PYQ("PYQs", Icons.Default.HelpOutline),
     PROGRESS("Progress", Icons.Default.TrendingUp),
     RESOURCES("Resources", Icons.Default.Folder),
     SEMESTERS("Semesters", Icons.Default.School),
@@ -68,6 +74,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
     var showQuickAddSheet by remember { mutableStateOf(false) }
     var showWhatShouldIStudyDialog by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
+    var showAssistantDialog by remember { mutableStateOf(false) }
 
     // Focus session dialog state
     var activeFocusSessionTopic by remember { mutableStateOf<TopicEntity?>(null) }
@@ -95,7 +102,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                             fontSize = 18.sp
                         )
                         Text(
-                            text = "Semester Study Planner",
+                            text = "Semester Study OS",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -110,6 +117,18 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
 
+                    // AI Study Assistant Button
+                    IconButton(
+                        onClick = { showAssistantDialog = true },
+                        modifier = Modifier.testTag("action_ai_assistant")
+                    ) {
+                        Icon(
+                            Icons.Default.AutoAwesome,
+                            contentDescription = "AI Study Assistant",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     // Focus Session Launcher
                     IconButton(
                         onClick = {
@@ -119,7 +138,11 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                         },
                         modifier = Modifier.testTag("action_focus")
                     ) {
-                        Icon(Icons.Default.SelfImprovement, contentDescription = "Focus Mode", tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Icons.Default.SelfImprovement,
+                            contentDescription = "Focus Mode",
+                            tint = MaterialTheme.colorScheme.secondary
+                        )
                     }
 
                     // Quick Add Action
@@ -165,14 +188,17 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                 }
 
                 // More Menu Button
+                val isMoreSelected = currentSection in listOf(
+                    NavigationSection.EXAMS,
+                    NavigationSection.PYQ,
+                    NavigationSection.PROGRESS,
+                    NavigationSection.RESOURCES,
+                    NavigationSection.SEMESTERS,
+                    NavigationSection.SETTINGS
+                )
+
                 NavigationBarItem(
-                    selected = currentSection in listOf(
-                        NavigationSection.EXAMS,
-                        NavigationSection.PROGRESS,
-                        NavigationSection.RESOURCES,
-                        NavigationSection.SEMESTERS,
-                        NavigationSection.SETTINGS
-                    ),
+                    selected = isMoreSelected,
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         showMoreSheet = true
@@ -205,6 +231,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                         viewModel = viewModel,
                         onNavigateToCalendar = { currentSection = NavigationSection.CALENDAR },
                         onNavigateToSubjects = { currentSection = NavigationSection.SUBJECTS },
+                        onNavigateToPYQ = { currentSection = NavigationSection.PYQ },
                         onNavigateToRevision = { currentSection = NavigationSection.REVISION },
                         onNavigateToProgress = { currentSection = NavigationSection.PROGRESS },
                         onNavigateToExams = { currentSection = NavigationSection.EXAMS },
@@ -217,7 +244,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                     )
                     NavigationSection.CALENDAR -> CalendarScreen(
                         viewModel = viewModel,
-                        onStartFocusSession = { title, duration, topicId, subjectId ->
+                        onStartFocusSession = { _, _, topicId, subjectId ->
                             activeFocusSessionTopic = topics.firstOrNull { it.id == topicId }
                             activeFocusSessionSubject = subjects.firstOrNull { it.id == subjectId }
                             showFocusDialog = true
@@ -236,6 +263,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                         viewModel = viewModel,
                         onNavigateToCalendar = { currentSection = NavigationSection.CALENDAR }
                     )
+                    NavigationSection.PYQ -> PYQScreen(viewModel = viewModel)
                     NavigationSection.PROGRESS -> ProgressScreen(viewModel = viewModel)
                     NavigationSection.RESOURCES -> ResourcesScreen(viewModel = viewModel)
                     NavigationSection.SEMESTERS -> SemestersScreen(viewModel = viewModel)
@@ -260,7 +288,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 Text(
-                    text = "Additional Student OS Workspaces",
+                    text = "Semester Study OS Workspaces",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleMedium
                 )
@@ -268,6 +296,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
 
                 listOf(
                     NavigationSection.EXAMS,
+                    NavigationSection.PYQ,
                     NavigationSection.PROGRESS,
                     NavigationSection.RESOURCES,
                     NavigationSection.SEMESTERS,
@@ -338,6 +367,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                     QuickAddType.STUDY_TASK -> currentSection = NavigationSection.CALENDAR
                     QuickAddType.EXAM -> currentSection = NavigationSection.EXAMS
                     QuickAddType.SUBJECT, QuickAddType.TOPIC -> currentSection = NavigationSection.SUBJECTS
+                    QuickAddType.PYQ -> currentSection = NavigationSection.PYQ
                     QuickAddType.REVISION -> currentSection = NavigationSection.REVISION
                     QuickAddType.NOTE, QuickAddType.RESOURCE -> currentSection = NavigationSection.RESOURCES
                 }
@@ -350,12 +380,12 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
         WhatShouldIStudyDialog(
             recommendations = recommendations,
             onDismiss = { showWhatShouldIStudyDialog = false },
-            onStartFocus = { topicId, topicName ->
+            onStartFocus = { topicId, _ ->
                 activeFocusSessionTopic = topics.firstOrNull { it.id == topicId }
                 activeFocusSessionSubject = subjects.firstOrNull { it.id == activeFocusSessionTopic?.subjectId }
                 showFocusDialog = true
             },
-            onScheduleTask = { topicId, topicName ->
+            onScheduleTask = { _, _ ->
                 currentSection = NavigationSection.CALENDAR
             }
         )
@@ -370,6 +400,14 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
             onFinishSession = { subId, topId, title, minutes, understanding ->
                 viewModel.recordFocusSession(subId, topId, title, minutes, understanding)
             }
+        )
+    }
+
+    // AI Study Assistant Dialog
+    if (showAssistantDialog) {
+        AIStudyAssistantDialog(
+            viewModel = viewModel,
+            onDismiss = { showAssistantDialog = false }
         )
     }
 }

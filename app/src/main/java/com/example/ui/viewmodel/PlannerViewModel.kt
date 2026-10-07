@@ -1020,6 +1020,49 @@ class PlannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun setSubjectUpcomingExamDate(
+        subjectId: Long,
+        examDate: String,
+        examType: String = "Final Exam",
+        onComplete: () -> Unit = {}
+    ) {
+        val user = _currentUser.value ?: return
+        val semId = _selectedSemesterId.value ?: semesters.value.firstOrNull { !it.isArchived }?.id ?: 1L
+        val sub = subjects.value.firstOrNull { it.id == subjectId }
+        val name = sub?.name ?: "Subject Exam"
+        viewModelScope.launch {
+            val existing = exams.value.firstOrNull { it.subjectId == subjectId }
+            if (existing != null) {
+                repository.updateExam(existing.copy(examDate = examDate, examType = examType))
+            } else {
+                repository.insertExam(
+                    ExamCycleEntity(
+                        semesterId = semId,
+                        userId = user.id,
+                        subjectId = subjectId,
+                        name = name,
+                        examType = examType,
+                        examDate = examDate,
+                        examTime = "10:00 AM",
+                        durationMinutes = 120,
+                        notes = "Upcoming exam for $name"
+                    )
+                )
+            }
+            onComplete()
+        }
+    }
+
+    fun removeSubjectUpcomingExamDate(subjectId: Long, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            val existing = exams.value.firstOrNull { it.subjectId == subjectId }
+            if (existing != null) {
+                repository.deleteExam(existing.id)
+            }
+            onComplete()
+        }
+    }
+
     // ---------------- FOCUS SESSION ----------------
     fun recordFocusSession(
         subjectId: Long?,

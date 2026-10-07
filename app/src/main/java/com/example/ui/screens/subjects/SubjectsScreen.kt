@@ -43,10 +43,12 @@ fun SubjectsScreen(
     val topics by viewModel.topics.collectAsStateWithLifecycle()
     val pyqs by viewModel.pyqs.collectAsStateWithLifecycle()
     val revisions by viewModel.revisions.collectAsStateWithLifecycle()
+    val exams by viewModel.exams.collectAsStateWithLifecycle()
 
     var selectedSubject by remember { mutableStateOf<SubjectEntity?>(null) }
     var showAddSubjectDialog by remember { mutableStateOf(false) }
     var showAddTopicDialog by remember { mutableStateOf(false) }
+    var showExamDatePicker by remember { mutableStateOf(false) }
     var topicToComplete by remember { mutableStateOf<TopicEntity?>(null) }
     var subjectToEdit by remember { mutableStateOf<SubjectEntity?>(null) }
     var subjectToDelete by remember { mutableStateOf<SubjectEntity?>(null) }
@@ -236,6 +238,132 @@ fun SubjectsScreen(
                                 .clip(RoundedCornerShape(3.dp)),
                             color = MaterialTheme.colorScheme.primary
                         )
+
+                        // Upcoming Exam Date Card
+                        val subjectExam = exams.filter { it.subjectId == currentSubject.id }.minByOrNull { it.examDate }
+                        val todayStr = remember { viewModel.repository.todayStr() }
+                        val dateFormat = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()) }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.CalendarToday,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Upcoming Exam Date",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+
+                                    if (subjectExam != null) {
+                                        Row {
+                                            IconButton(
+                                                onClick = { showExamDatePicker = true },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Date", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(
+                                                onClick = { viewModel.removeSubjectUpcomingExamDate(currentSubject.id) },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove Date", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                if (subjectExam != null) {
+                                    val daysDiff = try {
+                                        val d1 = dateFormat.parse(todayStr)?.time ?: 0L
+                                        val d2 = dateFormat.parse(subjectExam.examDate)?.time ?: 0L
+                                        ((d2 - d1) / (1000 * 60 * 60 * 24)).toInt()
+                                    } catch (_: Exception) { 0 }
+
+                                    val statusText = when {
+                                        daysDiff < 0 -> "Exam completed"
+                                        daysDiff == 0 -> "Exam today"
+                                        daysDiff == 1 -> "Exam tomorrow"
+                                        daysDiff <= 7 -> "Exam approaching"
+                                        else -> "Exam in $daysDiff days"
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "${currentSubject.name} • ${subjectExam.examDate}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = if (daysDiff >= 0) "$daysDiff days remaining" else "Completed",
+                                                fontSize = 11.sp,
+                                                color = if (daysDiff <= 7 && daysDiff >= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = when {
+                                                daysDiff < 0 -> MaterialTheme.colorScheme.surfaceVariant
+                                                daysDiff <= 3 -> MaterialTheme.colorScheme.errorContainer
+                                                daysDiff <= 7 -> MaterialTheme.colorScheme.tertiaryContainer
+                                                else -> MaterialTheme.colorScheme.primaryContainer
+                                            }
+                                        ) {
+                                            Text(
+                                                text = statusText,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "No upcoming exam date set",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        OutlinedButton(
+                                            onClick = { showExamDatePicker = true },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text("Set Exam Date", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(12.dp))
 
@@ -910,5 +1038,27 @@ fun SubjectsScreen(
                 }
             }
         )
+    }
+
+    // Exam Date Picker Dialog
+    if (showExamDatePicker && currentSubject != null) {
+        val cal = java.util.Calendar.getInstance()
+        android.app.DatePickerDialog(
+            context,
+            { _, year, month, dayOfMonth ->
+                val selectedCal = java.util.Calendar.getInstance().apply {
+                    set(year, month, dayOfMonth)
+                }
+                val formatted = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(selectedCal.time)
+                viewModel.setSubjectUpcomingExamDate(currentSubject.id, formatted)
+                showExamDatePicker = false
+            },
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).apply {
+            setOnDismissListener { showExamDatePicker = false }
+            show()
+        }
     }
 }
