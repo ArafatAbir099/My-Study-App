@@ -14,6 +14,9 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1")
     suspend fun getUserByName(name: String): UserEntity?
 
+    @Query("SELECT * FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(:identifier)) OR LOWER(TRIM(username)) = LOWER(TRIM(:identifier)) OR LOWER(TRIM(name)) = LOWER(TRIM(:identifier)) LIMIT 1")
+    suspend fun getUserByUsernameOrEmail(identifier: String): UserEntity?
+
     @Query("SELECT * FROM users ORDER BY id ASC")
     fun getAllUsers(): Flow<List<UserEntity>>
 
@@ -64,6 +67,9 @@ interface SubjectDao {
 
     @Query("SELECT * FROM subjects WHERE id = :id LIMIT 1")
     fun getSubjectById(id: Long): Flow<SubjectEntity?>
+
+    @Query("SELECT * FROM subjects WHERE id = :id LIMIT 1")
+    suspend fun getSubjectByIdDirect(id: Long): SubjectEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSubject(subject: SubjectEntity): Long
@@ -131,6 +137,15 @@ interface ExamCycleDao {
     @Query("SELECT * FROM exam_cycles WHERE userId = :userId ORDER BY examDate ASC")
     fun getExamsByUser(userId: Long): Flow<List<ExamCycleEntity>>
 
+    @Query("SELECT * FROM exam_cycles WHERE id = :id LIMIT 1")
+    fun getExamById(id: Long): Flow<ExamCycleEntity?>
+
+    @Query("SELECT * FROM exam_cycles WHERE id = :id LIMIT 1")
+    suspend fun getExamByIdDirect(id: Long): ExamCycleEntity?
+
+    @Query("SELECT * FROM exam_cycles WHERE subjectId = :subjectId ORDER BY examDate ASC")
+    fun getExamsBySubject(subjectId: Long): Flow<List<ExamCycleEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExam(exam: ExamCycleEntity): Long
 
@@ -160,6 +175,9 @@ interface CalendarTaskDao {
 
     @Query("DELETE FROM calendar_tasks WHERE id = :id")
     suspend fun deleteTaskById(id: Long)
+
+    @Query("DELETE FROM calendar_tasks WHERE examId = :examId AND isCompleted = 0")
+    suspend fun deleteUncompletedTasksByExamId(examId: Long)
 
     @Query("DELETE FROM calendar_tasks WHERE userId = :userId")
     suspend fun deleteTasksByUser(userId: Long)

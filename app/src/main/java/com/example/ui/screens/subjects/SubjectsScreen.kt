@@ -1,5 +1,8 @@
 package com.example.ui.screens.subjects
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -19,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,6 +38,7 @@ fun SubjectsScreen(
     viewModel: PlannerViewModel,
     onStartFocus: (TopicEntity) -> Unit
 ) {
+    val context = LocalContext.current
     val subjects by viewModel.subjects.collectAsStateWithLifecycle()
     val topics by viewModel.topics.collectAsStateWithLifecycle()
     val pyqs by viewModel.pyqs.collectAsStateWithLifecycle()
@@ -46,6 +51,29 @@ fun SubjectsScreen(
     var subjectToEdit by remember { mutableStateOf<SubjectEntity?>(null) }
     var subjectToDelete by remember { mutableStateOf<SubjectEntity?>(null) }
     var topicToDelete by remember { mutableStateOf<TopicEntity?>(null) }
+
+    // State for Image Syllabus Upload & AI Extraction Preview
+    var isProcessingSyllabusImage by remember { mutableStateOf(false) }
+    var showSyllabusPreviewDialog by remember { mutableStateOf(false) }
+    var extractedTopicList by remember { mutableStateOf<List<String>>(emptyList()) }
+    var previewSubjectTarget by remember { mutableStateOf<SubjectEntity?>(null) }
+    var syllabusUploadSnackbar by remember { mutableStateOf<String?>(null) }
+
+    // Multiple Images Launcher
+    val syllabusImagesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        val target = selectedSubject ?: subjects.firstOrNull()
+        if (uris.isNotEmpty() && target != null) {
+            isProcessingSyllabusImage = true
+            previewSubjectTarget = target
+            viewModel.extractSyllabusFromImages(target, uris) { extractedNames ->
+                isProcessingSyllabusImage = false
+                extractedTopicList = extractedNames
+                showSyllabusPreviewDialog = true
+            }
+        }
+    }
 
     // If selected subject is null and subjects exist, default to first
     LaunchedEffect(subjects) {
@@ -208,6 +236,36 @@ fun SubjectsScreen(
                                 .clip(RoundedCornerShape(3.dp)),
                             color = MaterialTheme.colorScheme.primary
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Upload Syllabus Image Action Bar
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FilledTonalButton(
+                                onClick = { syllabusImagesLauncher.launch("image/*") },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("btn_upload_syllabus_image"),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Upload Syllabus Image", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showAddTopicDialog = true },
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Topic", fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
 
@@ -235,11 +293,33 @@ fun SubjectsScreen(
                             .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "No topics in this syllabus yet. Tap + Add Topic to build your curriculum!",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(16.dp)
+                        ) {
+                            Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "No topics in ${currentSubject.name} yet.",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Take a photo or upload screenshot(s) of your syllabus.\nAI will read the topics automatically!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = { syllabusImagesLauncher.launch("image/*") },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Upload Syllabus Image(s)")
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -684,6 +764,150 @@ fun SubjectsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { subjectToEdit = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ==========================================
+    // AI EXTRACTED SYLLABUS PREVIEW & EDIT DIALOG
+    // ==========================================
+    if (showSyllabusPreviewDialog && previewSubjectTarget != null) {
+        val targetSub = previewSubjectTarget!!
+        val hasExtracted = extractedTopicList.isNotEmpty()
+        var editableTopicsText by remember {
+            mutableStateOf(extractedTopicList.joinToString("\n"))
+        }
+        var isEditingRaw by remember { mutableStateOf(!hasExtracted) }
+
+        AlertDialog(
+            onDismissRequest = { showSyllabusPreviewDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Column {
+                    Text("AI Extracted Syllabus", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "Subject: ${targetSub.name}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (hasExtracted) {
+                        Text(
+                            text = "Review extracted topics below. The AI extracted content from your uploaded image(s) without inventing unpresent topics.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Could not automatically read topics from image. You can type or paste your syllabus topics below (one topic per line) and confirm.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (isEditingRaw) "Edit Topics (one per line):" else "Extracted Topics (${editableTopicsText.lines().filter { it.isNotBlank() }.size}):",
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        TextButton(onClick = { isEditingRaw = !isEditingRaw }) {
+                            Icon(
+                                if (isEditingRaw) Icons.Default.Check else Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (isEditingRaw) "Preview" else "Edit", fontSize = 11.sp)
+                        }
+                    }
+
+                    if (isEditingRaw) {
+                        OutlinedTextField(
+                            value = editableTopicsText,
+                            onValueChange = { editableTopicsText = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                                .heightIn(min = 160.dp, max = 260.dp),
+                            placeholder = { Text("Topic 1\nTopic 2\nTopic 3") }
+                        )
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .padding(8.dp)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val currentLines = editableTopicsText.lines().filter { it.isNotBlank() }
+                                items(currentLines) { topicLine ->
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = topicLine.trim(),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalTopics = editableTopicsText.lines().map { it.trim() }.filter { it.isNotBlank() }
+                        viewModel.confirmExtractedSyllabus(targetSub, finalTopics) { savedCount ->
+                            syllabusUploadSnackbar = "Confirmed! $savedCount topics added and study plan updated."
+                        }
+                        showSyllabusPreviewDialog = false
+                    },
+                    modifier = Modifier.testTag("btn_confirm_syllabus")
+                ) {
+                    Text("Confirm Syllabus")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyllabusPreviewDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }

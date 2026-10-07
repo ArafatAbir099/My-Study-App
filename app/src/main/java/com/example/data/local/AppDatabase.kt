@@ -21,7 +21,7 @@ import androidx.room.RoomDatabase
         FocusSessionEntity::class,
         StudyActivityEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

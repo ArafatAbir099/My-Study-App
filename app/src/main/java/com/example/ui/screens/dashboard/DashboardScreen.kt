@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,11 +40,13 @@ fun DashboardScreen(
     viewModel: PlannerViewModel,
     onNavigateToCalendar: () -> Unit,
     onNavigateToSubjects: () -> Unit,
-    onNavigateToPYQ: () -> Unit,
+    onNavigateToPYQ: () -> Unit = {},
     onNavigateToRevision: () -> Unit,
     onNavigateToProgress: () -> Unit,
     onOpenWhatShouldIStudy: () -> Unit,
-    onStartFocus: (TopicEntity) -> Unit
+    onStartFocus: (TopicEntity) -> Unit,
+    onNavigateToExams: () -> Unit = {},
+    onNavigateToSyllabus: () -> Unit = {}
 ) {
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val semesters by viewModel.semesters.collectAsStateWithLifecycle()
@@ -96,6 +99,11 @@ fun DashboardScreen(
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "overall_score_int_anim"
     )
+
+    // Automatically check and reschedule any missed past study/revision tasks into upcoming schedule before exams
+    LaunchedEffect(Unit) {
+        viewModel.checkAndRescheduleMissedTasks()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -218,7 +226,7 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text("Syllabus: $syllabusPercent%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("PYQ: $pyqPercent%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Exams: ${exams.size}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Rev: $revPercent%", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -229,7 +237,10 @@ fun DashboardScreen(
                 val daysLeft = readiness?.daysLeft
 
                 Card(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onNavigateToExams() }
+                        .testTag("dashboard_exam_countdown_card"),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = if (daysLeft != null && daysLeft <= 14) MaterialTheme.colorScheme.errorContainer
@@ -238,14 +249,27 @@ fun DashboardScreen(
                     elevation = CardDefaults.cardElevation(2.dp)
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                            text = nearestExam?.name?.uppercase() ?: "UPCOMING EXAM",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (daysLeft != null && daysLeft <= 14) MaterialTheme.colorScheme.onErrorContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = nearestExam?.name?.uppercase() ?: "UPCOMING EXAM",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (daysLeft != null && daysLeft <= 14) MaterialTheme.colorScheme.onErrorContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = "View Exams",
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(modifier = Modifier.height(6.dp))
                         if (daysLeft != null) {
                             Row(verticalAlignment = Alignment.Bottom) {
@@ -265,20 +289,20 @@ fun DashboardScreen(
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Exam: ${nearestExam?.examDate ?: ""}",
+                                text = "Exam: ${nearestExam?.examDate ?: ""} (${nearestExam?.examTime ?: ""})",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1
                             )
                         } else {
                             Text(
-                                text = "No date set",
-                                fontSize = 20.sp,
+                                text = "Schedule Exam",
+                                fontSize = 18.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Add exam cycle in calendar", style = MaterialTheme.typography.labelSmall)
+                            Text("Tap to schedule exam date & time", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

@@ -6,7 +6,8 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "users")
 data class UserEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
+    val username: String = "",
+    val name: String = "",
     val email: String,
     val passwordHash: String,
     val university: String = "University",
@@ -39,7 +40,10 @@ data class SubjectEntity(
     val teacherName: String = "",
     val colorHex: String = "#3B82F6",
     val iconName: String = "menu_book",
-    val notes: String = ""
+    val notes: String = "",
+    val syllabusPdfPath: String? = null,
+    val syllabusPdfName: String? = null,
+    val syllabusRawText: String? = null
 )
 
 @Entity(tableName = "chapters")
@@ -72,12 +76,19 @@ data class ExamCycleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val semesterId: Long,
     val userId: Long,
-    val name: String, // "Midterm", "Final", etc.
-    val prepStartDate: String,
-    val prepEndDate: String,
-    val examDate: String,
+    val subjectId: Long = 0L,
+    val name: String, // Course name or custom title
+    val examType: String = "Midterm", // "Midterm", "Quiz", "Final"
+    val prepStartDate: String = "",
+    val prepEndDate: String = "",
+    val examDate: String, // "yyyy-MM-dd"
+    val examTime: String = "10:30 AM",
+    val durationMinutes: Int = 60,
+    val syllabusPdfPath: String? = null,
+    val syllabusPdfName: String? = null,
     val targetTopicIds: String = "", // Comma-separated or "ALL"
-    val notes: String = ""
+    val notes: String = "",
+    val isCompleted: Boolean = false
 )
 
 @Entity(tableName = "calendar_tasks")
@@ -89,6 +100,7 @@ data class CalendarTaskEntity(
     val subjectId: Long? = null,
     val topicId: Long? = null,
     val pyqId: Long? = null,
+    val examId: Long? = null,
     val date: String, // "yyyy-MM-dd"
     val startTime: String = "09:00",
     val endTime: String = "10:00",
@@ -96,7 +108,7 @@ data class CalendarTaskEntity(
     val isCompleted: Boolean = false,
     val completedAt: Long? = null,
     val notes: String = "",
-    val taskType: String = "STUDY" // STUDY, REVISION, PYQ_PRACTICE, EXAM_PREP
+    val taskType: String = "STUDY" // STUDY, REVISION, EXAM, EXAM_PREP
 )
 
 @Entity(tableName = "revision_items")

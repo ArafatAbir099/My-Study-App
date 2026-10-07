@@ -1,10 +1,15 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.*
 import com.example.data.repository.StudyPlannerRepository
+import com.example.util.AutomaticRevisionPlanner
+import com.example.util.ExtractedCourse
+import com.example.util.SyllabusParseResult
+import com.example.util.SyllabusPdfParser
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -130,53 +135,88 @@ class PlannerViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // ---------------- AUTH ACTIONS ----------------
-    fun login(email: String, pass: String, onResult: (Boolean, String) -> Unit) {
+    fun login(usernameOrEmail: String, pass: String, onResult: (Boolean, String) -> Unit) {
+        val identifier = usernameOrEmail.trim()
+        val password = pass.trim()
+        if (identifier.isEmpty()) {
+            onResult(false, "Please enter your username or email.")
+            return
+        }
+        if (password.isEmpty()) {
+            onResult(false, "Please enter your password.")
+            return
+        }
         viewModelScope.launch {
-            val user = repository.getUserByEmail(email.trim())
+            val user = repository.getUserByUsernameOrEmail(identifier)
             if (user != null) {
-                if (user.passwordHash == pass.trim() || user.passwordHash.isEmpty()) {
+                if (user.passwordHash == password || user.passwordHash.isEmpty()) {
                     _currentUser.value = user
-                    onResult(true, "Welcome back, ${user.name}!")
+                    onResult(true, "Welcome back, ${user.username.ifEmpty { user.name.ifEmpty { "Student" } }}!")
                 } else {
                     onResult(false, "Incorrect password. Please try again.")
                 }
             } else {
-                onResult(false, "User not found. Please register your profile.")
+                onResult(false, "Account not found. Please verify your credentials or sign up.")
             }
         }
     }
 
     fun register(
-        name: String,
+        username: String,
         email: String,
         pass: String,
-        uni: String,
-        studentId: String = "",
+        confirmPass: String,
         onResult: (Boolean, String) -> Unit
     ) {
+        val cleanUser = username.trim()
+        val cleanEmail = email.trim()
+        val cleanPass = pass.trim()
+        val cleanConfirm = confirmPass.trim()
+
+        if (cleanUser.isEmpty()) {
+            onResult(false, "Please enter a username.")
+            return
+        }
+        if (cleanEmail.isEmpty()) {
+            onResult(false, "Please enter an email address.")
+            return
+        }
+        if (!cleanEmail.contains("@") || !cleanEmail.contains(".")) {
+            onResult(false, "Please enter a valid email address.")
+            return
+        }
+        if (cleanPass.isEmpty()) {
+            onResult(false, "Please enter a password.")
+            return
+        }
+        if (cleanPass.length < 4) {
+            onResult(false, "Password must be at least 4 characters.")
+            return
+        }
+        if (cleanPass != cleanConfirm) {
+            onResult(false, "Passwords do not match. Please re-type your password.")
+            return
+        }
+
         viewModelScope.launch {
-            val trimmedEmail = email.trim()
-            if (trimmedEmail.isEmpty()) {
-                onResult(false, "Please enter your email.")
-                return@launch
-            }
-            val existing = repository.getUserByEmail(trimmedEmail)
+            val existing = repository.getUserByUsernameOrEmail(cleanEmail) ?: repository.getUserByUsernameOrEmail(cleanUser)
             if (existing != null) {
-                onResult(false, "Email is already registered. Please sign in.")
+                onResult(false, "An account with this email or username already exists. Please sign in.")
                 return@launch
             }
             val id = repository.insertUser(
                 UserEntity(
-                    name = name.trim().ifEmpty { "Student" },
-                    email = trimmedEmail,
-                    passwordHash = pass.trim().ifEmpty { "123456" },
-                    university = uni.trim().ifEmpty { "University" },
-                    studentId = studentId.trim().ifEmpty { "STU-${Random().nextInt(9000) + 1000}" }
+                    username = cleanUser,
+                    name = cleanUser,
+                    email = cleanEmail,
+                    passwordHash = cleanPass,
+                    university = "University",
+                    studentId = ""
                 )
             )
-            repository.seedInitialDataForUser(id) // Sets up clean empty semester container
+            repository.seedInitialDataForUser(id)
             _currentUser.value = repository.getUserById(id)
-            onResult(true, "Profile created! You can now configure your subjects.")
+            onResult(true, "Account created successfully!")
         }
     }
 
@@ -467,7 +507,495 @@ class PlannerViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // ---------------- SYLLABUS PDF & AUTOMATIC AI ANALYSIS ----------------
+    fun uploadSemesterSyllabus(
+        uri: Uri,
+        fileName: String,
+        onComplete: (SyllabusParseResult) -> Unit
+    ) {
+        val user = _currentUser.value ?: return
+        val currentSemId = _selectedSemesterId.value ?: semesters.value.firstOrNull { !it.isArchived }?.id ?: 1L
+        viewModelScope.launch {
+            val localFile = SyllabusPdfParser.savePdfLocally(getApplication(), uri, fileName)
+            val extractedText = SyllabusPdfParser.extractTextFromPdf(getApplication(), uri)
+            val parseResult = SyllabusPdfParser.parseSyllabusContent(extractedText, fileName)
+
+            if (parseResult.isSuccess && parseResult.courses.isNotEmpty()) {
+                val existingSubjects = subjects.value
+                for (extractedCourse in parseResult.courses) {
+                    val matchingSubject = existingSubjects.firstOrNull {
+                        it.name.equals(extractedCourse.courseName, ignoreCase = true) ||
+                        (extractedCourse.courseCode.isNotBlank() && it.courseCode.equals(extractedCourse.courseCode, ignoreCase = true))
+                    }
+
+                    val subjectId = if (matchingSubject != null) {
+                        repository.updateSubject(
+                            matchingSubject.copy(
+                                syllabusPdfPath = localFile?.absolutePath,
+                                syllabusPdfName = fileName,
+                                syllabusRawText = extractedText
+                            )
+                        )
+                        matchingSubject.id
+                    } else {
+                        repository.insertSubject(
+                            SubjectEntity(
+                                semesterId = currentSemId,
+                                userId = user.id,
+                                name = extractedCourse.courseName,
+                                courseCode = extractedCourse.courseCode,
+                                syllabusPdfPath = localFile?.absolutePath,
+                                syllabusPdfName = fileName,
+                                syllabusRawText = extractedText
+                            )
+                        )
+                    }
+
+                    // Insert Units as Chapters and Topics as Topics
+                    for ((unitIndex, unit) in extractedCourse.units.withIndex()) {
+                        val chapterId = repository.insertChapter(
+                            ChapterEntity(
+                                subjectId = subjectId,
+                                userId = user.id,
+                                title = unit.title,
+                                orderIndex = unitIndex + 1
+                            )
+                        )
+                        for (topic in unit.topics) {
+                            repository.insertTopic(
+                                TopicEntity(
+                                    chapterId = chapterId,
+                                    subjectId = subjectId,
+                                    userId = user.id,
+                                    name = topic.name,
+                                    description = topic.description,
+                                    status = "NOT_STARTED"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            onComplete(parseResult)
+        }
+    }
+
+    fun attachCourseSyllabus(
+        subject: SubjectEntity,
+        uri: Uri,
+        fileName: String,
+        onComplete: (SyllabusParseResult) -> Unit
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val localFile = SyllabusPdfParser.savePdfLocally(getApplication(), uri, fileName)
+            val extractedText = SyllabusPdfParser.extractTextFromPdf(getApplication(), uri)
+            val parseResult = SyllabusPdfParser.parseSyllabusContent(extractedText, fileName)
+
+            repository.updateSubject(
+                subject.copy(
+                    syllabusPdfPath = localFile?.absolutePath,
+                    syllabusPdfName = fileName,
+                    syllabusRawText = extractedText
+                )
+            )
+
+            if (parseResult.isSuccess) {
+                val courseToUse = parseResult.courses.firstOrNull()
+                if (courseToUse != null) {
+                    for ((unitIndex, unit) in courseToUse.units.withIndex()) {
+                        val chapterId = repository.insertChapter(
+                            ChapterEntity(
+                                subjectId = subject.id,
+                                userId = user.id,
+                                title = unit.title,
+                                orderIndex = unitIndex + 1
+                            )
+                        )
+                        for (topic in unit.topics) {
+                            repository.insertTopic(
+                                TopicEntity(
+                                    chapterId = chapterId,
+                                    subjectId = subject.id,
+                                    userId = user.id,
+                                    name = topic.name,
+                                    description = topic.description,
+                                    status = "NOT_STARTED"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            onComplete(parseResult)
+        }
+    }
+
+    fun deleteCourseSyllabus(subject: SubjectEntity) {
+        viewModelScope.launch {
+            repository.updateSubject(
+                subject.copy(
+                    syllabusPdfPath = null,
+                    syllabusPdfName = null,
+                    syllabusRawText = null
+                )
+            )
+        }
+    }
+
+    fun reanalyzeCourseSyllabus(
+        subject: SubjectEntity,
+        onComplete: (SyllabusParseResult) -> Unit
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val rawText = subject.syllabusRawText ?: run {
+                val pdfPath = subject.syllabusPdfPath
+                if (pdfPath != null) {
+                    val file = java.io.File(pdfPath)
+                    if (file.exists()) {
+                        SyllabusPdfParser.extractTextFromPdfBytes(file.readBytes())
+                    } else ""
+                } else ""
+            }
+
+            if (rawText.isBlank()) {
+                onComplete(
+                    SyllabusParseResult(
+                        isSuccess = false,
+                        courses = emptyList(),
+                        rawText = "",
+                        message = "No syllabus content found to re-analyze. Please upload a syllabus PDF or enter syllabus text."
+                    )
+                )
+                return@launch
+            }
+
+            val parseResult = SyllabusPdfParser.parseSyllabusContent(rawText, subject.name)
+            if (parseResult.isSuccess && parseResult.courses.isNotEmpty()) {
+                val extracted = parseResult.courses.first()
+                for ((unitIndex, unit) in extracted.units.withIndex()) {
+                    val chapterId = repository.insertChapter(
+                        ChapterEntity(
+                            subjectId = subject.id,
+                            userId = user.id,
+                            title = unit.title,
+                            orderIndex = unitIndex + 1
+                        )
+                    )
+                    for (topic in unit.topics) {
+                        repository.insertTopic(
+                            TopicEntity(
+                                chapterId = chapterId,
+                                subjectId = subject.id,
+                                userId = user.id,
+                                name = topic.name,
+                                description = topic.description,
+                                status = "NOT_STARTED"
+                            )
+                        )
+                    }
+                }
+            }
+            onComplete(parseResult)
+        }
+    }
+
+    /**
+     * Extracts syllabus topics from one or more uploaded image URIs.
+     * Preserves original structure without inventing any unpresent topics.
+     */
+    fun extractSyllabusFromImages(
+        subject: SubjectEntity,
+        imageUris: List<Uri>,
+        onComplete: (List<String>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val combinedText = StringBuilder()
+            val context = getApplication<Application>()
+            for (uri in imageUris) {
+                val text = com.example.util.SyllabusImageExtractor.extractTextFromImageUri(context, uri)
+                if (text.isNotBlank()) {
+                    combinedText.append(text).append("\n")
+                }
+            }
+
+            val parsedTopics = com.example.util.SyllabusImageExtractor.parseStructuredTopics(combinedText.toString())
+            val topicNames = parsedTopics.map { it.name }.distinct()
+            onComplete(topicNames)
+        }
+    }
+
+    /**
+     * Confirms and saves reviewed/edited syllabus topics to the subject.
+     * Automatically triggers exam study & revision plan recalculation for any upcoming exams for this subject.
+     */
+    fun confirmExtractedSyllabus(
+        subject: SubjectEntity,
+        confirmedTopics: List<String>,
+        onComplete: (Int) -> Unit
+    ) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            if (confirmedTopics.isEmpty()) {
+                onComplete(0)
+                return@launch
+            }
+
+            val chapterId = repository.insertChapter(
+                ChapterEntity(
+                    subjectId = subject.id,
+                    userId = user.id,
+                    title = "${subject.name} Syllabus",
+                    orderIndex = 1
+                )
+            )
+
+            var insertedCount = 0
+            for (topicName in confirmedTopics) {
+                if (topicName.isNotBlank()) {
+                    repository.insertTopic(
+                        TopicEntity(
+                            chapterId = chapterId,
+                            subjectId = subject.id,
+                            userId = user.id,
+                            name = topicName.trim(),
+                            description = "Extracted from syllabus image",
+                            status = "NOT_STARTED"
+                        )
+                    )
+                    insertedCount++
+                }
+            }
+
+            // Update subject raw text for future re-analysis
+            val joinedText = confirmedTopics.joinToString("\n")
+            repository.updateSubject(
+                subject.copy(
+                    syllabusRawText = (subject.syllabusRawText ?: "") + "\n" + joinedText
+                )
+            )
+
+            // Recalculate study & revision plans for any scheduled exams for this subject
+            val subjectExams = exams.value.filter { it.subjectId == subject.id }
+            for (exam in subjectExams) {
+                regenerateExamPlan(exam) { _, _ -> }
+            }
+
+            onComplete(insertedCount)
+        }
+    }
+
     // ---------------- EXAM CYCLE ACTIONS ----------------
+    fun addExamWithAutoPlan(
+        subjectId: Long,
+        examType: String,
+        examDate: String,
+        examTime: String,
+        durationMinutes: Int,
+        notes: String,
+        customPdfPath: String? = null,
+        customPdfName: String? = null,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val user = _currentUser.value ?: run {
+            onResult(false, "User not authenticated")
+            return
+        }
+        val currentSemId = _selectedSemesterId.value ?: semesters.value.firstOrNull { !it.isArchived }?.id ?: 1L
+        val subject = subjects.value.firstOrNull { it.id == subjectId }
+        val courseName = subject?.name ?: "Course Exam"
+        val normalizedDate = AutomaticRevisionPlanner.normalizeDate(examDate)
+
+        viewModelScope.launch {
+            val examId = repository.insertExam(
+                ExamCycleEntity(
+                    semesterId = currentSemId,
+                    userId = user.id,
+                    subjectId = subjectId,
+                    name = "$courseName $examType",
+                    examType = examType,
+                    examDate = normalizedDate,
+                    examTime = examTime.ifBlank { "10:30 AM" },
+                    durationMinutes = durationMinutes,
+                    syllabusPdfPath = customPdfPath ?: subject?.syllabusPdfPath,
+                    syllabusPdfName = customPdfName ?: subject?.syllabusPdfName,
+                    notes = notes
+                )
+            )
+
+            val createdExam = repository.getExamByIdDirect(examId) ?: return@launch
+            val subjectTopics = repository.getTopicsBySubject(subjectId).firstOrNull() ?: emptyList()
+            val userCompletedTasks = repository.getTasksByUser(user.id).firstOrNull() ?: emptyList()
+            val allOtherExams = exams.value.filter { it.id != examId }
+
+            val plan = AutomaticRevisionPlanner.generateExamStudyPlan(
+                exam = createdExam,
+                subject = subject,
+                topics = subjectTopics,
+                existingCompletedTasks = userCompletedTasks,
+                otherExams = allOtherExams,
+                todayStr = repository.todayStr()
+            )
+
+            for (task in plan.tasks) {
+                repository.insertTask(task)
+            }
+            for (rev in plan.revisions) {
+                repository.insertRevision(rev)
+            }
+
+            val msg = if (plan.tasks.isNotEmpty()) {
+                "Exam scheduled for $normalizedDate at ${createdExam.examTime}! Created ${plan.tasks.size} study & revision sessions."
+            } else {
+                "Exam added. ${plan.warnings.firstOrNull() ?: ""}"
+            }
+            onResult(true, msg)
+        }
+    }
+
+    fun addExamWithAutoPlanAndCourse(
+        courseName: String,
+        examType: String,
+        examDate: String,
+        examTime: String,
+        durationMinutes: Int,
+        notes: String,
+        customPdfPath: String? = null,
+        customPdfName: String? = null,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val user = _currentUser.value ?: run {
+            onResult(false, "User not authenticated")
+            return
+        }
+        viewModelScope.launch {
+            val currentSemId = _selectedSemesterId.value ?: semesters.value.firstOrNull { !it.isArchived }?.id ?: 1L
+            val existingSubject = subjects.value.firstOrNull { it.name.equals(courseName.trim(), ignoreCase = true) }
+            val subjectId = existingSubject?.id ?: run {
+                repository.insertSubject(
+                    SubjectEntity(
+                        semesterId = currentSemId,
+                        userId = user.id,
+                        name = courseName.trim().ifBlank { "Course" },
+                        courseCode = "",
+                        credits = 3.0,
+                        teacherName = "",
+                        notes = ""
+                    )
+                )
+            }
+            addExamWithAutoPlan(
+                subjectId = subjectId,
+                examType = examType,
+                examDate = examDate,
+                examTime = examTime,
+                durationMinutes = durationMinutes,
+                notes = notes,
+                customPdfPath = customPdfPath,
+                customPdfName = customPdfName,
+                onResult = onResult
+            )
+        }
+    }
+
+    fun autoPlanAllExams(onResult: (Boolean, String) -> Unit) {
+        val user = _currentUser.value ?: run {
+            onResult(false, "User not authenticated")
+            return
+        }
+        viewModelScope.launch {
+            val allExams = exams.value
+            if (allExams.isEmpty()) {
+                onResult(false, "No upcoming exams found. Please schedule an exam first.")
+                return@launch
+            }
+            var totalTasksCreated = 0
+            for (exam in allExams) {
+                val subject = repository.getSubjectByIdDirect(exam.subjectId)
+                val subjectTopics = repository.getTopicsBySubject(exam.subjectId).firstOrNull() ?: emptyList()
+                val userCompletedTasks = repository.getTasksByUser(user.id).firstOrNull() ?: emptyList()
+                val otherExamsList = allExams.filter { it.id != exam.id }
+
+                repository.deleteUncompletedTasksByExamId(exam.id)
+
+                val plan = AutomaticRevisionPlanner.generateExamStudyPlan(
+                    exam = exam,
+                    subject = subject,
+                    topics = subjectTopics,
+                    existingCompletedTasks = userCompletedTasks,
+                    otherExams = otherExamsList,
+                    todayStr = repository.todayStr(),
+                    preserveCompleted = true
+                )
+
+                for (task in plan.tasks) {
+                    repository.insertTask(task)
+                    totalTasksCreated++
+                }
+                for (rev in plan.revisions) {
+                    repository.insertRevision(rev)
+                }
+            }
+            onResult(true, "AI auto-planned $totalTasksCreated study and revision sessions across ${allExams.size} upcoming exams.")
+        }
+    }
+
+    fun regenerateExamPlan(exam: ExamCycleEntity, onResult: (Boolean, String) -> Unit) {
+        val user = _currentUser.value ?: return
+        viewModelScope.launch {
+            val subject = repository.getSubjectByIdDirect(exam.subjectId)
+            val subjectTopics = repository.getTopicsBySubject(exam.subjectId).firstOrNull() ?: emptyList()
+            val userCompletedTasks = repository.getTasksByUser(user.id).firstOrNull() ?: emptyList()
+            val allOtherExams = exams.value.filter { it.id != exam.id }
+
+            repository.deleteUncompletedTasksByExamId(exam.id)
+
+            val plan = AutomaticRevisionPlanner.generateExamStudyPlan(
+                exam = exam,
+                subject = subject,
+                topics = subjectTopics,
+                existingCompletedTasks = userCompletedTasks,
+                otherExams = allOtherExams,
+                todayStr = repository.todayStr(),
+                preserveCompleted = true
+            )
+
+            for (task in plan.tasks) {
+                repository.insertTask(task)
+            }
+            for (rev in plan.revisions) {
+                repository.insertRevision(rev)
+            }
+
+            onResult(true, "Plan regenerated with ${plan.tasks.size} active sessions.")
+        }
+    }
+
+    fun updateExam(exam: ExamCycleEntity) {
+        viewModelScope.launch {
+            repository.updateExam(exam)
+        }
+    }
+
+    fun checkAndRescheduleMissedTasks(onResult: (Int) -> Unit = {}) {
+        val user = _currentUser.value ?: return
+        val today = repository.todayStr()
+        viewModelScope.launch {
+            val allTasks = repository.getTasksByUser(user.id).firstOrNull() ?: emptyList()
+            val pastUncompleted = allTasks.filter { it.date < today && !it.isCompleted }
+            if (pastUncompleted.isEmpty()) {
+                onResult(0)
+                return@launch
+            }
+            val rescheduled = AutomaticRevisionPlanner.rescheduleMissedTasks(pastUncompleted, exams.value, today)
+            for (t in rescheduled) {
+                repository.updateTask(t)
+            }
+            onResult(rescheduled.size)
+        }
+    }
+
     fun addExamCycle(name: String, prepStart: String, prepEnd: String, examDate: String, notes: String) {
         val user = _currentUser.value ?: return
         val semId = _selectedSemesterId.value ?: semesters.value.firstOrNull { !it.isArchived }?.id ?: 1L
@@ -714,9 +1242,11 @@ class PlannerViewModel(application: Application) : AndroidViewModel(application)
                 val overall = ((sylScore * 0.35) + (underScore * 0.25) + (revScore * 0.20) + (pyqScore * 0.20)).toInt()
 
                 val days = try {
-                    val targetDate = dateFormat.parse(exam.examDate)
-                    val diff = (targetDate?.time ?: 0L) - System.currentTimeMillis()
-                    (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+                    val targetDate = com.example.util.AutomaticRevisionPlanner.parseFlexibleDate(exam.examDate)
+                    if (targetDate != null) {
+                        val diff = targetDate.time - System.currentTimeMillis()
+                        (diff / (1000 * 60 * 60 * 24)).toInt().coerceAtLeast(0)
+                    } else null
                 } catch (_: Exception) {
                     null
                 }

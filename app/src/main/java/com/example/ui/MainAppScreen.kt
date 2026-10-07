@@ -31,9 +31,9 @@ import com.example.ui.components.QuickAddType
 import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.calendar.CalendarScreen
 import com.example.ui.screens.dashboard.DashboardScreen
+import com.example.ui.screens.exams.ExamsScreen
 import com.example.ui.screens.focus.FocusSessionDialog
 import com.example.ui.screens.progress.ProgressScreen
-import com.example.ui.screens.pyq.PYQScreen
 import com.example.ui.screens.recommendation.WhatShouldIStudyDialog
 import com.example.ui.screens.resources.ResourcesScreen
 import com.example.ui.screens.revision.RevisionScreen
@@ -46,8 +46,8 @@ enum class NavigationSection(val label: String, val icon: androidx.compose.ui.gr
     DASHBOARD("Dashboard", Icons.Default.Dashboard),
     CALENDAR("Calendar", Icons.Default.CalendarMonth),
     SUBJECTS("Subjects", Icons.Default.MenuBook),
-    PYQ("PYQs", Icons.Default.Quiz),
     REVISION("Revision", Icons.Default.Autorenew),
+    EXAMS("Exams", Icons.Default.EventNote),
     PROGRESS("Progress", Icons.Default.TrendingUp),
     RESOURCES("Resources", Icons.Default.Folder),
     SEMESTERS("Semesters", Icons.Default.School),
@@ -146,7 +146,6 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                     NavigationSection.DASHBOARD,
                     NavigationSection.CALENDAR,
                     NavigationSection.SUBJECTS,
-                    NavigationSection.PYQ,
                     NavigationSection.REVISION
                 )
 
@@ -168,6 +167,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                 // More Menu Button
                 NavigationBarItem(
                     selected = currentSection in listOf(
+                        NavigationSection.EXAMS,
                         NavigationSection.PROGRESS,
                         NavigationSection.RESOURCES,
                         NavigationSection.SEMESTERS,
@@ -205,9 +205,9 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                         viewModel = viewModel,
                         onNavigateToCalendar = { currentSection = NavigationSection.CALENDAR },
                         onNavigateToSubjects = { currentSection = NavigationSection.SUBJECTS },
-                        onNavigateToPYQ = { currentSection = NavigationSection.PYQ },
                         onNavigateToRevision = { currentSection = NavigationSection.REVISION },
                         onNavigateToProgress = { currentSection = NavigationSection.PROGRESS },
+                        onNavigateToExams = { currentSection = NavigationSection.EXAMS },
                         onOpenWhatShouldIStudy = { showWhatShouldIStudyDialog = true },
                         onStartFocus = { topic ->
                             activeFocusSessionTopic = topic
@@ -231,8 +231,11 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                             showFocusDialog = true
                         }
                     )
-                    NavigationSection.PYQ -> PYQScreen(viewModel = viewModel)
                     NavigationSection.REVISION -> RevisionScreen(viewModel = viewModel)
+                    NavigationSection.EXAMS -> ExamsScreen(
+                        viewModel = viewModel,
+                        onNavigateToCalendar = { currentSection = NavigationSection.CALENDAR }
+                    )
                     NavigationSection.PROGRESS -> ProgressScreen(viewModel = viewModel)
                     NavigationSection.RESOURCES -> ResourcesScreen(viewModel = viewModel)
                     NavigationSection.SEMESTERS -> SemestersScreen(viewModel = viewModel)
@@ -264,6 +267,7 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
                 Spacer(modifier = Modifier.height(14.dp))
 
                 listOf(
+                    NavigationSection.EXAMS,
                     NavigationSection.PROGRESS,
                     NavigationSection.RESOURCES,
                     NavigationSection.SEMESTERS,
@@ -332,8 +336,8 @@ fun MainAppScreen(viewModel: PlannerViewModel) {
             onSelectType = { type ->
                 when (type) {
                     QuickAddType.STUDY_TASK -> currentSection = NavigationSection.CALENDAR
+                    QuickAddType.EXAM -> currentSection = NavigationSection.EXAMS
                     QuickAddType.SUBJECT, QuickAddType.TOPIC -> currentSection = NavigationSection.SUBJECTS
-                    QuickAddType.PYQ -> currentSection = NavigationSection.PYQ
                     QuickAddType.REVISION -> currentSection = NavigationSection.REVISION
                     QuickAddType.NOTE, QuickAddType.RESOURCE -> currentSection = NavigationSection.RESOURCES
                 }

@@ -28,6 +28,7 @@ class StudyPlannerRepository(private val db: AppDatabase) {
     // ---------------- AUTH & USERS ----------------
     suspend fun getUserById(id: Long) = userDao.getUserById(id)
     suspend fun getUserByEmail(email: String) = userDao.getUserByEmail(email)
+    suspend fun getUserByUsernameOrEmail(identifier: String) = userDao.getUserByUsernameOrEmail(identifier)
     fun getAllUsers(): Flow<List<UserEntity>> = userDao.getAllUsers()
     suspend fun insertUser(user: UserEntity) = userDao.insertUser(user)
     suspend fun updateUser(user: UserEntity) = userDao.updateUser(user)
@@ -43,6 +44,7 @@ class StudyPlannerRepository(private val db: AppDatabase) {
     fun getSubjects(semesterId: Long): Flow<List<SubjectEntity>> = subjectDao.getSubjectsBySemester(semesterId)
     fun getSubjectsByUser(userId: Long): Flow<List<SubjectEntity>> = subjectDao.getSubjectsByUser(userId)
     fun getSubjectById(id: Long): Flow<SubjectEntity?> = subjectDao.getSubjectById(id)
+    suspend fun getSubjectByIdDirect(id: Long) = subjectDao.getSubjectByIdDirect(id)
     suspend fun insertSubject(subject: SubjectEntity): Long = subjectDao.insertSubject(subject)
     suspend fun updateSubject(subject: SubjectEntity) = subjectDao.updateSubject(subject)
     suspend fun deleteSubject(id: Long) = subjectDao.deleteSubjectById(id)
@@ -55,6 +57,7 @@ class StudyPlannerRepository(private val db: AppDatabase) {
     fun getTopicsBySubject(subjectId: Long): Flow<List<TopicEntity>> = topicDao.getTopicsBySubject(subjectId)
     fun getTopicsByUser(userId: Long): Flow<List<TopicEntity>> = topicDao.getTopicsByUser(userId)
     fun getTopicById(id: Long): Flow<TopicEntity?> = topicDao.getTopicById(id)
+    suspend fun getTopicByIdDirect(id: Long) = topicDao.getTopicByIdDirect(id)
     suspend fun insertTopic(topic: TopicEntity): Long = topicDao.insertTopic(topic)
     suspend fun updateTopic(topic: TopicEntity) = topicDao.updateTopic(topic)
     suspend fun deleteTopic(id: Long) = topicDao.deleteTopicById(id)
@@ -62,6 +65,9 @@ class StudyPlannerRepository(private val db: AppDatabase) {
     // ---------------- EXAM CYCLES ----------------
     fun getExams(semesterId: Long): Flow<List<ExamCycleEntity>> = examDao.getExamsBySemester(semesterId)
     fun getExamsByUser(userId: Long): Flow<List<ExamCycleEntity>> = examDao.getExamsByUser(userId)
+    fun getExamById(id: Long): Flow<ExamCycleEntity?> = examDao.getExamById(id)
+    suspend fun getExamByIdDirect(id: Long) = examDao.getExamByIdDirect(id)
+    fun getExamsBySubject(subjectId: Long): Flow<List<ExamCycleEntity>> = examDao.getExamsBySubject(subjectId)
     suspend fun insertExam(exam: ExamCycleEntity): Long = examDao.insertExam(exam)
     suspend fun updateExam(exam: ExamCycleEntity) = examDao.updateExam(exam)
     suspend fun deleteExam(id: Long) = examDao.deleteExamById(id)
@@ -72,6 +78,7 @@ class StudyPlannerRepository(private val db: AppDatabase) {
     suspend fun insertTask(task: CalendarTaskEntity): Long = calendarDao.insertTask(task)
     suspend fun updateTask(task: CalendarTaskEntity) = calendarDao.updateTask(task)
     suspend fun deleteTask(id: Long) = calendarDao.deleteTaskById(id)
+    suspend fun deleteUncompletedTasksByExamId(examId: Long) = calendarDao.deleteUncompletedTasksByExamId(examId)
 
     suspend fun toggleTaskCompletion(task: CalendarTaskEntity) {
         val completed = !task.isCompleted
